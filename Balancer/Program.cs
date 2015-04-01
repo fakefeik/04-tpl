@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Runtime.Remoting;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using HashServer;
@@ -37,6 +39,7 @@ namespace Balancer
             context.Request.InputStream.Close();
             var upServers = topology.ToList();
             Stream st = null;
+            var deflate = context.Request.Headers["Accept-Encoding"].Contains("deflate");
             while (st == null)
             {
                 if (!upServers.Any())
@@ -75,8 +78,18 @@ namespace Balancer
                 }
                 else Console.WriteLine("Redirected to server {0}.", server);
             }
-            var s = await new StreamReader(st).ReadToEndAsync();
-            await context.Response.OutputStream.WriteAsync(s.Select(Convert.ToByte).ToArray(), 0, s.Length);
+            
+            if (deflate)
+            {
+                context.Response.Headers.Add("Content-Encoding", "deflate");
+                var bytes = Compress(st);
+                await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+            }
+            else
+            {
+                var s = await new StreamReader(st).ReadToEndAsync();
+                await context.Response.OutputStream.WriteAsync(s.Select(Convert.ToByte).ToArray(), 0, s.Length);
+            }
             context.Response.OutputStream.Close();
         }
 
@@ -85,6 +98,17 @@ namespace Balancer
             var request = CreateRequest(uri);
             var reply = await request.GetResponseAsync();
             return reply.GetResponseStream();
+        }
+
+        static byte[] Compress(Stream input)
+        {
+            using (var compressStream = new MemoryStream())
+            using (var compressor = new DeflateStream(compressStream, CompressionMode.Compress))
+            {
+                input.CopyTo(compressor);
+                compressor.Close();
+                return compressStream.ToArray();
+            }
         }
 
         static HttpWebRequest CreateRequest(string uri, int timeout = 30 * 1000)
