@@ -14,17 +14,18 @@ namespace Balancer
 {
     class Program
     {
-        private static int timeout = 2000;
+        private static int timeout = 3000;
         private static string[] topology; 
         private static Random random = new Random();
 
         static void Main(string[] args)
         {
             var startFile = args.Length == 0 ? "HashServer.exe" : args[0];
-            topology = File.ReadAllLines("topology.conf");
+            var lines = File.ReadAllLines("topology.conf");
+            topology = lines.Select(x => x.Split(' ')[0]).ToArray();
             var port = 6002;
-            foreach (var line in topology)
-                Process.Start(startFile, line.Split(':')[1]);
+            foreach (var line in lines)
+                Process.Start(startFile, line.Split(new [] {':', ' '})[1] + " " + line.Split(new []{':', ' '})[2]);
             var listener = new Listener(port, "method", OnContextAsync);
             listener.Start();
             new ManualResetEvent(false).WaitOne();
@@ -39,7 +40,7 @@ namespace Balancer
             context.Request.InputStream.Close();
             var upServers = topology.ToList();
             Stream st = null;
-            var deflate = context.Request.Headers["Accept-Encoding"].Contains("deflate");
+            var deflate = (context.Request.Headers["Accept-Encoding"] ?? "").Contains("deflate");
             while (st == null)
             {
                 if (!upServers.Any())
@@ -53,6 +54,7 @@ namespace Balancer
                 var server = upServers[random.Next(upServers.Count)];
                 try
                 {
+                    //Console.WriteLine("werehere");
                     var tasks = new Task<Stream>[2];
                     tasks[0] =
                         DownloadPageAsync("http://" + server + "/" + context.Request.RawUrl);
@@ -81,6 +83,7 @@ namespace Balancer
             
             if (deflate)
             {
+                Console.WriteLine("Encoding with deflate...");
                 context.Response.Headers.Add("Content-Encoding", "deflate");
                 var bytes = Compress(st);
                 await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);

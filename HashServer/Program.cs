@@ -11,16 +11,19 @@ namespace HashServer
 {
 	class Program
 	{
+	    private static int timeout = 1000;
 		static void Main(string[] args)
 		{
 			XmlConfigurator.Configure();
 			try
 			{
-				var listener = new Listener(port, "method", OnContextAsync);
+				var listener = new Listener(args.Length == 0 ? port : int.Parse(args[0]), "method", OnContextAsync);
+			    timeout = args.Length > 1 ? int.Parse(args[1]) : timeout;
 				listener.Start();
 
-				var listenerSync = new ListenerSync(port, "methodSync", OnContext);
-				listenerSync.Start();
+                Console.WriteLine("Timeout: " + timeout);
+				//var listenerSync = new ListenerSync(port, "methodSync", OnContext);
+				//listenerSync.Start();
 
 				log.InfoFormat("Server started!");
 				new ManualResetEvent(false).WaitOne();
@@ -40,7 +43,7 @@ namespace HashServer
 			log.InfoFormat("{0}: received {1} from {2}", requestId, query, remoteEndPoint);
 			context.Request.InputStream.Close();
 
-			await Task.Delay(1000);
+			await Task.Delay(timeout);
 //			Thread.Sleep(1000);
 
 			var hash = Convert.ToBase64String(CalcHash(Encoding.UTF8.GetBytes(query)));
